@@ -1,3 +1,5 @@
+from statistics import median_low
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,6 +7,8 @@ from pydantic import BaseModel
 import ollama
 import logging as logger
 import json
+
+from starlette.responses import StreamingResponse
 
 logger.basicConfig(
     level=logger.INFO,
@@ -32,6 +36,9 @@ class ChatIn(BaseModel):
     message: str
     # allows for a user to set the length of time a model stays alive for
     keep_alive: str = "30m"
+
+class PullModel(BaseModel):
+    model: str
 
 # if starts up an ollama model if it has been pulled, and sends a message
 @app.post("/api/chat")
@@ -76,3 +83,43 @@ def chat(body: ChatIn): # the ChatIn class here is a new object
 # def loaded_models():
     # This will return the number of models loaded when it is built.
     # The bash command for this is 'ollama ps'
+
+
+@app.post('/api/models/pull')
+def pull_model(body: PullModel):
+    logger.info("[Server - pullModel] Starting endpoint")
+    def stream():
+        try:
+            for chunk in client.pull(model=body.model, stream=True):
+                payload = dict(chunk)
+                yield f"data: {json.dumps(payload)}\n\n"
+
+            logger.info("[Server - pullModel] completed model=%s", body.model)
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+        except ollama.ResponseError as e:
+            logger.warning(
+                "[Server - pullModel] ollama rejected model=%s status=%s",
+                body.model, e.status_code
+            )
+            reason = (
+                f"model: {body.model} not found in registery"
+                if e.status_code == 404
+                else f"ollama error: {e.error}"
+            )
+            yield f"data: {json.dumps({'error': reason})}\n\n"
+
+        except Exception as e:
+            logger.exception("[Server - pullModel] unexpected failure model=%s", body.model)
+            yield f"data: {json.dumps({'error': str(e)})}"
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+
