@@ -60,7 +60,7 @@ def update_status(body: ModelStatus, conn: sqlite3.Connection = Depends(get_db))
     except sqlite3.Error as e:
         logger.error(f"[Server - update_status] failed to connect to database: {e}")
 
-    logger.info("[Server - update_status] Successfully updated the install status for ", body.name)
+    logger.info("[Server - update_status] Successfully updated the install status for %s", body.name)
     return {"success": True}
 
 @router.get("/allmodels")
