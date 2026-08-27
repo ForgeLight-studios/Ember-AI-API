@@ -4,6 +4,7 @@ import logging as logger
 from DbAccess import init_db
 from routes.ollamaRoutes import router as ollama_router
 from routes.modelRoute import router as model_router
+from routes.chatsRoutes import router as chats_router
 logger.basicConfig(
     level=logger.INFO,
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
@@ -17,6 +18,7 @@ app = FastAPI(
 
 app.include_router(ollama_router)
 app.include_router(model_router)
+app.include_router(chats_router)
 
 @app.on_event("startup")
 def startup():
