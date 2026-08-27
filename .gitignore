@@ -2,3 +2,4 @@
 .idea
 .venv
 ember.db
+ember.log
