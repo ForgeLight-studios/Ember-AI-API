@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import json
 from starlette.responses import StreamingResponse
 import ollama
+from ollama import ChatResponse
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,10 +18,14 @@ router = APIRouter(
     prefix="/ollama"
 )
 
+class Message(BaseModel):
+    role: str
+    content: str
+
 # creates a defining class for what a model should look like
 class ChatIn(BaseModel):
     model: str
-    message: str
+    messages: list[Message]
     # allows for a user to set the length of time a model stays alive for
     keep_alive: str = "30m"
 
@@ -28,14 +33,14 @@ class PullModel(BaseModel):
     model: str
 
 # if starts up an ollama model if it has been pulled, and sends a message
-@router.post("/newChat")
+@router.post("/sendMessage")
 def chat(body: ChatIn): # the ChatIn class here is a new object
     logger.info("[Server - chat] Starting endpoint.")
     try:
         logger.info("[Server - chat] Attempting to connect to the ollama server")
         resp = client.chat(
             model=body.model,
-            messages=[{"role": "user", "content": body.message}],
+            messages=body.messages,
             # keeps that model alive for 30 minutes after the last message
             keep_alive=body.keep_alive
         )
