@@ -6,8 +6,9 @@ CREATE TABLE IF NOT EXISTS models (
 );
 
 CREATE TABLE IF NOT EXISTS chats (
-    id         INTEGER PRIMARY KEY,
+    id         TEXT PRIMARY KEY,
     title      TEXT,
+    model      TEXT REFERENCES models(name),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -17,7 +18,6 @@ CREATE TABLE IF NOT EXISTS messages (
     chat_id    TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
     role       TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
     content    TEXT NOT NULL,
-    model      TEXT REFERENCES models(name) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
