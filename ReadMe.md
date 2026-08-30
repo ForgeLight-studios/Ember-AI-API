@@ -4,7 +4,7 @@ The backend for **Ember AI**, a self-hosted, locally-hosted AI web app under [Fo
 
 ## Features
 
-- Chat with any locally installed Ollama model
+- Chat with any locally installed Ollama model, sending prior turns so the model has conversation context
 - Pull new models from the Ollama registry with live streaming progress (Server-Sent Events)
 - Track installed models and their install status (`pulling`, `installed`, `failed`) in SQLite
 - Persist chats and messages with a normalised schema and cascade deletes
@@ -84,20 +84,23 @@ The app writes logs both to the console and to a rotating file, `ember.log`, so 
 
 ### Ollama routes (`/ollama`)
 
-#### `POST /ollama/newChat`
+#### `POST /ollama/sendMessage`
 
-Send a message to a model. Starts the model if it has been pulled.
+Send a conversation to a model and get its reply. Starts the model if it has been pulled. The full message history is sent, so the model has context from earlier turns.
 
 Request body:
 
 ```json
 {
   "model": "llama3",
-  "message": "Hello there",
+  "messages": [
+    { "role": "user", "content": "Hello there" }
+  ],
   "keep_alive": "30m"
 }
 ```
 
+- `messages` is the ordered conversation so far; each entry has a `role` (`user` | `assistant` | `system`) and `content`.
 - `keep_alive` is optional and defaults to `"30m"` (how long the model stays loaded after the last message).
 
 Responses:
@@ -118,7 +121,7 @@ Request body:
 
 Each SSE event is a `data:` line containing JSON. The stream ends with `{"done": true}`, or emits `{"error": "..."}` on failure (for example, when a model manifest is not found in the registry). Errors are streamed as `data:` chunks with a `200 OK` status rather than as a non-2xx response, so clients must inspect chunks for an `error` field rather than relying only on the HTTP status.
 
-> **Note:** Pulling a model that is already installed is idempotent on Ollama's side; the pull completes with success rather than erroring. See Known issues for the status-handling gap this currently exposes.
+> **Note:** Pulling a model that is already installed is idempotent on Ollama's side; the pull completes with success rather than erroring.
 
 ### Model routes (`/model`)
 
@@ -179,14 +182,15 @@ Response:
 
 #### `POST /chats/createChat`
 
-Create a new chat record.
+Create a new chat record. Must be called before any message referencing the chat is inserted, since `messages.chat_id` has a foreign key to `chats.id`.
 
 Request body:
 
 ```json
 {
   "id": "client-generated-id",
-  "title": "New chat"
+  "title": "Chat title",
+  "model": "llama3"
 }
 ```
 
@@ -196,9 +200,32 @@ Responses:
 - `409` — chat already exists
 - `500` — database error
 
+#### `POST /chats/createMessage`
+
+Persist a single message against an existing chat. The chat row must already exist (see the foreign-key note above), or the insert fails with a foreign-key constraint error.
+
+Request body:
+
+```json
+{
+  "id": "client-generated-id",
+  "chat_id": "owning-chat-id",
+  "role": "user",
+  "content": "Hello there"
+}
+```
+
+Responses:
+
+- `200` — `{ "success": true }`
+- `409` — integrity error (e.g. foreign-key constraint failed when the chat does not exist)
+- `500` — database error
+
+> Both `createChat` and `createMessage` call `conn.commit()` after the insert; without it the write is discarded when the request's connection is torn down.
+
 #### `GET /chats/getAllChats`
 
-Return every chat with its messages nested. The endpoint joins `chats` and `messages`, then groups the flat rows into one object per chat in the application layer (SQLite returns a flat row per message, so the nesting is assembled in Python).
+Return every chat with its messages nested. The endpoint `LEFT JOIN`s `chats` and `messages` (so chats with no messages are still returned), then groups the flat rows into one object per chat in the application layer (SQLite returns a flat row per message, so the nesting is assembled in Python).
 
 Response:
 
@@ -209,13 +236,12 @@ Response:
     {
       "id": "...",
       "title": "...",
+      "model": "...",
       "messages": [
         {
           "id": "...",
           "role": "user",
-          "content": "...",
-          "model": "...",
-          "created_at": "..."
+          "content": "..."
         }
       ]
     }
@@ -223,14 +249,14 @@ Response:
 }
 ```
 
-> Requires `conn.row_factory = sqlite3.Row` so rows support named column access.
+> Requires `conn.row_factory = sqlite3.Row` so rows support named column access. Rows where the message columns are `NULL` (a chat with no messages) are skipped when building the nested `messages` array.
 
 ## Database schema
 
 Defined in `db_sql/sql.sql`:
 
 - **`models`** — `name` (PK), `description`, `status` (`pulling` | `installed` | `failed`), `created_at`
-- **`chats`** — `id` (PK), `title`, `created_at`, `updated_at`
+- **`chats`** — `id` (PK), `title`, `model`, `created_at`, `updated_at`
 - **`messages`** — `id` (PK), `chat_id` (FK to `chats`, cascade delete), `role` (`user` | `assistant` | `system`), `content`, `model` (FK to `models`, set null on delete), `created_at`
 
 Indexes on `messages(chat_id, created_at)` and `chats(updated_at DESC)`.
@@ -258,12 +284,18 @@ END;
 └── routes/
     ├── ollamaRoutes.py      # chat and pull endpoints
     ├── modelRoute.py        # model CRUD endpoints
-    └── chatsRoutes.py       # chat persistence endpoints
+    └── chatsRoutes.py       # chat and message persistence endpoints
 ```
 
 ## Recent fixes
 
-- **Already-installed pulls now settle correctly.** When a pull is requested for a model that already exists, the flow no longer leaves the model stuck at `pulling`; conflict handling and status correction settle the record on `installed`.
+- **Chat and message persistence.** Added `POST /chats/createMessage` and ensured both chat and message inserts `conn.commit()`, so chats and messages now survive a reload. `getAllChats` uses an `INNER JOIN` so chats with no messages are not returned.
+- **Already-installed pulls settle correctly.** When a pull is requested for a model that already exists, the flow no longer leaves the model stuck at `pulling`; conflict handling and status correction settle the record on `installed`.
+
+## Known issues
+
+- **Foreign-key error when persisting the first message of an explicitly-created chat.** When a chat is created via the "+ New Chat" control (rather than by typing into the empty chat window on load), the chat row is not always inserted before its first message, so `createMessage` can fail with a foreign-key constraint error. Sending in a fresh chat window on load persists correctly.
+- **chats without messages are still saved to the database.** When a new chat is made, the chat is added to the database before a message has been sent, if no message is sent, and the page is closed or reloaded, that chat is not returned due to the INNER JOIN on selecting chats
 
 ## Roadmap / planned work
 
