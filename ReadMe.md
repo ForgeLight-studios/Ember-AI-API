@@ -291,10 +291,10 @@ END;
 
 - **Chat and message persistence.** Added `POST /chats/createMessage` and ensured both chat and message inserts `conn.commit()`, so chats and messages now survive a reload. `getAllChats` uses an `INNER JOIN` so chats with no messages are not returned.
 - **Already-installed pulls settle correctly.** When a pull is requested for a model that already exists, the flow no longer leaves the model stuck at `pulling`; conflict handling and status correction settle the record on `installed`.
+- **Foreign-key error when persisting the first message of an explicitly-created chat.** When a chat is created via the "+ New Chat" control (rather than by typing into the empty chat window on load), the chat row is not always inserted before its first message, so `createMessage` can fail with a foreign-key constraint error. Sending in a fresh chat window on load persists correctly.
 
 ## Known issues
 
-- **Foreign-key error when persisting the first message of an explicitly-created chat.** When a chat is created via the "+ New Chat" control (rather than by typing into the empty chat window on load), the chat row is not always inserted before its first message, so `createMessage` can fail with a foreign-key constraint error. Sending in a fresh chat window on load persists correctly.
 - **chats without messages are still saved to the database.** When a new chat is made, the chat is added to the database before a message has been sent, if no message is sent, and the page is closed or reloaded, that chat is not returned due to the INNER JOIN on selecting chats
 
 ## Roadmap / planned work
