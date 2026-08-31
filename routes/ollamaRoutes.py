@@ -1,10 +1,10 @@
 from fastapi import APIRouter
+from fastapi.openapi.utils import status_code_ranges
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import json
 from starlette.responses import StreamingResponse
 import ollama
-from ollama import ChatResponse
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,6 +13,20 @@ logger = logging.getLogger(__name__)
 OLLAMA_HOST = "http://localhost:11434"
 
 client = ollama.Client(host=OLLAMA_HOST)
+
+def deleteOllamaModel(modelName):
+    try:
+        client.delete(modelName)
+    except ollama.ResponseError as e:
+        logger.error(f"[deleteOllamaModel] Ollama rejected delete for {modelName!r}: status={e.status_code} error={e.error}")
+        return {
+            "status_code": e.status_code,
+            "success": False
+        }
+    return {
+        "status_code": 200,
+        "success": True
+    }
 
 router = APIRouter(
     prefix="/ollama"
@@ -32,7 +46,7 @@ class ChatIn(BaseModel):
 class PullModel(BaseModel):
     model: str
 
-# if starts up an ollama model if it has been pulled, and sends a message
+# it starts up an ollama model if it has been pulled, and sends a message
 @router.post("/sendMessage")
 def chat(body: ChatIn): # the ChatIn class here is a new object
     logger.info("[Server - chat] Starting endpoint.")

@@ -1,6 +1,8 @@
 import logging
 import sqlite3
+from plistlib import dumps
 
+from .ollamaRoutes import deleteOllamaModel
 from DbAccess import get_db
 from fastapi import APIRouter, Depends
 import json
@@ -27,7 +29,7 @@ def create_model(body: Model, conn: sqlite3.Connection = Depends(get_db)):
     logger.info("[Server - create model] Endpoint started")
     try:
         logger.info("[Server - create model] attempting to connect to database")
-        cur = conn.execute("INSERT INTO models (name, description, status) VALUES (?, ?, ?)", (body.name, body.description, body.status))
+        conn.execute("INSERT INTO models (name, description, status) VALUES (?, ?, ?)", (body.name, body.description, body.status))
         conn.commit()
     except sqlite3.IntegrityError as e:
         logger.warning("[Server - create_model] duplicate model: %s\nError: %s", body.name, e)
@@ -81,3 +83,33 @@ def get_all_models(conn: sqlite3.Connection = Depends(get_db)):
     models = [dict(row) for row in rows]
     logger.info("[Server - get_all_models] Models retrieved\n%s", json.dumps(models))
     return {"success": True, "models": models}
+
+@router.delete("/delete")
+def deleteModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
+    logger.info(f"[Server - deleteModel] Starting endpoint: {body.name}")
+    resData = deleteOllamaModel(body.name)
+    if resData.get("status_code") != 200:
+        return JSONResponse(
+            status_code=resData.get("status_code"),
+            content={"success": resData.get("success")}
+        )
+    try:
+        cur = conn.execute('DELETE FROM models WHERE name=?', (body.name,))
+        if cur.rowcount > 1:
+            conn.rollback()
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "reason": "Multiple models matched; deletion aborted"}
+            )
+        conn.commit()
+        return JSONResponse(
+            status_code=200,
+            content={"success": True}
+        )
+    except sqlite3.Error as e:
+        logger.error(f"[Server - deleteModel] was unable to delete the model: {e}")
+        conn.rollback()
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "reason": e}
+        )
