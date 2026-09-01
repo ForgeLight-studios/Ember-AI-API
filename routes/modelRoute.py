@@ -82,36 +82,6 @@ def get_all_models(conn: sqlite3.Connection = Depends(get_db)):
     logger.info("[Server - get_all_models] Models retrieved\n%s", json.dumps(models))
     return {"success": True, "models": models}
 
-# @router.delete("/delete")
-# def deleteModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
-#     logger.info(f"[Server - deleteModel] Starting endpoint: {body.name}")
-#     resData = deleteOllamaModel(body.name)
-#     if resData.get("status_code") != 200:
-#         return JSONResponse(
-#             status_code=resData.get("status_code"),
-#             content={"success": resData.get("success")}
-#         )
-#     try:
-#         cur = conn.execute('DELETE FROM models WHERE name=?', (body.name,))
-#         if cur.rowcount > 1:
-#             conn.rollback()
-#             return JSONResponse(
-#                 status_code=500,
-#                 content={"success": False, "reason": "Multiple models matched; deletion aborted"}
-#             )
-#         conn.commit()
-#         return JSONResponse(
-#             status_code=200,
-#             content={"success": True}
-#         )
-#     except sqlite3.Error as e:
-#         logger.error(f"[Server - deleteModel] was unable to delete the model: {e}")
-#         conn.rollback()
-#         return JSONResponse(
-#             status_code=500,
-#             content={"success": False, "reason": e}
-#         )
-
 
 @router.delete("/delete")
 def deleteAModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
