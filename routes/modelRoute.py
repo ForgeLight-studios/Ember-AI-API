@@ -1,7 +1,7 @@
 import logging
 import sqlite3
 from plistlib import dumps
-from services import deleteOllamaModel, insert_model
+from services import deleteOllamaModel, insert_model, getInstalledModels
 from DbAccess import get_db
 from fastapi import APIRouter, Depends
 import json
@@ -82,15 +82,55 @@ def get_all_models(conn: sqlite3.Connection = Depends(get_db)):
     logger.info("[Server - get_all_models] Models retrieved\n%s", json.dumps(models))
     return {"success": True, "models": models}
 
+# @router.delete("/delete")
+# def deleteModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
+#     logger.info(f"[Server - deleteModel] Starting endpoint: {body.name}")
+#     resData = deleteOllamaModel(body.name)
+#     if resData.get("status_code") != 200:
+#         return JSONResponse(
+#             status_code=resData.get("status_code"),
+#             content={"success": resData.get("success")}
+#         )
+#     try:
+#         cur = conn.execute('DELETE FROM models WHERE name=?', (body.name,))
+#         if cur.rowcount > 1:
+#             conn.rollback()
+#             return JSONResponse(
+#                 status_code=500,
+#                 content={"success": False, "reason": "Multiple models matched; deletion aborted"}
+#             )
+#         conn.commit()
+#         return JSONResponse(
+#             status_code=200,
+#             content={"success": True}
+#         )
+#     except sqlite3.Error as e:
+#         logger.error(f"[Server - deleteModel] was unable to delete the model: {e}")
+#         conn.rollback()
+#         return JSONResponse(
+#             status_code=500,
+#             content={"success": False, "reason": e}
+#         )
+
+
 @router.delete("/delete")
-def deleteModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
+def deleteAModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
     logger.info(f"[Server - deleteModel] Starting endpoint: {body.name}")
-    resData = deleteOllamaModel(body.name)
-    if resData.get("status_code") != 200:
+    response = getInstalledModels()
+    if not response.get("success"):
         return JSONResponse(
-            status_code=resData.get("status_code"),
-            content={"success": resData.get("success")}
+            status_code=500,
+            content={"Success": False, "reason": "failed to contact the ollama service"}
         )
+    isInstalled = any(m == body.name for m in response.get("models"))
+    if isInstalled:
+        result = deleteOllamaModel(body.name)
+        if not result.get("success"):
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "reason": "Could not access the ollama service"}
+            )
+
     try:
         cur = conn.execute('DELETE FROM models WHERE name=?', (body.name,))
         if cur.rowcount > 1:
@@ -100,14 +140,14 @@ def deleteModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
                 content={"success": False, "reason": "Multiple models matched; deletion aborted"}
             )
         conn.commit()
-        return JSONResponse(
-            status_code=200,
-            content={"success": True}
-        )
     except sqlite3.Error as e:
-        logger.error(f"[Server - deleteModel] was unable to delete the model: {e}")
+        logger.error(f"[Server - deleteModel] was unable to delete the model: " + str(e))
         conn.rollback()
         return JSONResponse(
             status_code=500,
             content={"success": False, "reason": e}
         )
+    return JSONResponse(
+        status_code=200,
+        content={"success": True}
+    )

@@ -30,3 +30,15 @@ def deleteOllamaModel(modelName):
         "status_code": 200,
         "success": True
     }
+
+def getInstalledModels():
+    try:
+        installed = client.list()
+        return {
+            "success": True,
+            "models": [m.model for m in installed.models]
+        }
+    except ollama.ResponseError as e:
+        return {
+            "success": False
+        }
