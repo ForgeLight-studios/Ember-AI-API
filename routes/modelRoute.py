@@ -1,8 +1,7 @@
 import logging
 import sqlite3
 from plistlib import dumps
-
-from .ollamaRoutes import deleteOllamaModel
+from services import deleteOllamaModel, insert_model
 from DbAccess import get_db
 from fastapi import APIRouter, Depends
 import json
@@ -29,8 +28,7 @@ def create_model(body: Model, conn: sqlite3.Connection = Depends(get_db)):
     logger.info("[Server - create model] Endpoint started")
     try:
         logger.info("[Server - create model] attempting to connect to database")
-        conn.execute("INSERT INTO models (name, description, status) VALUES (?, ?, ?)", (body.name, body.description, body.status))
-        conn.commit()
+        insert_model(conn, body.name, body.description, body.status)
     except sqlite3.IntegrityError as e:
         logger.warning("[Server - create_model] duplicate model: %s\nError: %s", body.name, e)
         return JSONResponse(

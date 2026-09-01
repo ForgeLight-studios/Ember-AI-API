@@ -1,32 +1,15 @@
-from fastapi import APIRouter
-from fastapi.openapi.utils import status_code_ranges
+import sqlite3
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from DbAccess import get_db
+from services import insert_model, client
 import json
 from starlette.responses import StreamingResponse
 import ollama
 import logging
 
 logger = logging.getLogger(__name__)
-
-# sets the value for the internal ollama server
-OLLAMA_HOST = "http://localhost:11434"
-
-client = ollama.Client(host=OLLAMA_HOST)
-
-def deleteOllamaModel(modelName):
-    try:
-        client.delete(modelName)
-    except ollama.ResponseError as e:
-        logger.error(f"[deleteOllamaModel] Ollama rejected delete for {modelName!r}: status={e.status_code} error={e.error}")
-        return {
-            "status_code": e.status_code,
-            "success": False
-        }
-    return {
-        "status_code": 200,
-        "success": True
-    }
 
 router = APIRouter(
     prefix="/ollama"
@@ -120,6 +103,28 @@ def pull_model(body: PullModel):
             "X-Accel-Buffering": "no"
         }
     )
+
+@router.get('/checkInstalled')
+def checkInstalledModels(conn: sqlite3.Connection = Depends(get_db)):
+    logger.info("[Server - checkInstalledModels] starting endpoint")
+    modelsInstalled = client.list()
+    logger.info(f"[Server - checkInstalledModels] Models already Installed\n{modelsInstalled}")
+    if not len(modelsInstalled.models) > 0:
+        return JSONResponse(
+            status_code=200,
+            content={"success": False, "reason": "No models to install"}
+        )
+    for model in modelsInstalled.models:
+        try:
+            insert_model(conn, model.model, "", "installed")
+        except sqlite3.Error as e:
+            logger.error(f"[Server - checkInstalledModels] Error adding models to the database {e}")
+            conn.rollback()
+    return JSONResponse (
+        status_code= 200,
+        content={"success": True}
+    )
+
 
 
 # @app.get("/api/models/loaded"):
