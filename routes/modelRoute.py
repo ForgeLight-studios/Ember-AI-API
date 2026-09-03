@@ -15,9 +15,10 @@ class Model(BaseModel):
     description: str
     status: str
 
-class ModelStatus(BaseModel):
+class ModelPatch(BaseModel):
+    attributeValue: str
     name: str
-    status: str
+    attribute: str
 
 router = APIRouter(
     prefix="/model"
@@ -44,13 +45,13 @@ def create_model(body: Model, conn: sqlite3.Connection = Depends(get_db)):
         )
     return {"success": True, "name": body.name}
 
-@router.patch("/status")
-def update_status(body: ModelStatus, conn: sqlite3.Connection = Depends(get_db)):
+@router.patch("/patch")
+def update_status(body: ModelPatch, conn: sqlite3.Connection = Depends(get_db)):
     logger.info("[Server - update_status] Starting endpoint")
     try:
         cur = conn.execute(
-            "UPDATE models SET status = ? WHERE name = ?",
-            (body.status, body.name),
+            f"UPDATE models SET {body.attribute} = ? WHERE name = ?",
+            (body.attributeValue, body.name),
         )
         conn.commit()
         if cur.rowcount == 0:
