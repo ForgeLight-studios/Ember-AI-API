@@ -24,7 +24,7 @@ class ChatIn(BaseModel):
     model: str
     messages: list[Message]
     # allows for a user to set the length of time a model stays alive for
-    keep_alive: str = "30m"
+    keep_alive: str
 
 class PullModel(BaseModel):
     model: str
