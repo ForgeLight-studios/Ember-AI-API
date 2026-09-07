@@ -116,3 +116,38 @@ def getAllChats(conn: sqlite3.Connection = Depends(get_db)):
         content= {"success": True, "chats": results}
     )
 
+@router.delete("/delete")
+def deleteChat (body: Chat ,conn: sqlite3.Connection = Depends(get_db)):
+    logger.info("[Server - deleteChat] Started endpoint")
+    try:
+        # sqlite doesnt enforce foreign keys on default
+        conn.execute("PRAGMA foreign_keys = ON")
+        cur = conn.execute("DELETE FROM chats WHERE id=?", (body.id, ))
+
+        if cur.rowcount == 0:
+            logger.error(f"Chat could not be found in the database")
+            conn.rollback()
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "reason": f"Chat: {body.id} could not be found"}
+            )
+        if cur.rowcount > 1:
+            logger.error("More than one chat has been found")
+            conn.rollback()
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "reason": "More than one chat matched"}
+            )
+        conn.commit()
+        logger.info(f"Successfully deleted chat: {body.id}")
+        return JSONResponse(
+            status_code=200,
+            content={"success": True}
+        )
+    except sqlite3.Error as e:
+        logger.error(f"[Server - deleteChat] Error when deleting a chat: {body.id} Error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "reason": "Internal server error"}
+        )
+
