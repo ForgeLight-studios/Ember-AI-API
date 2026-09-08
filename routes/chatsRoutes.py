@@ -24,6 +24,11 @@ class Chat(BaseModel):
     title: str
     model: str
 
+class ChatPatch(BaseModel):
+    attributeValue: str
+    id: str
+    attribute: str
+
 @router.post('/createChat')
 def newChat(body: Chat, conn: sqlite3.Connection = Depends(get_db)):
     logger.info("[Server - createChat] Starting endpoint")
@@ -151,3 +156,24 @@ def deleteChat (body: Chat ,conn: sqlite3.Connection = Depends(get_db)):
             content={"success": False, "reason": "Internal server error"}
         )
 
+@router.patch("/patch")
+def editChat(body: ChatPatch, conn: sqlite3.Connection = Depends(get_db)):
+    logger.info("[Server - editChat] Starting endpoint")
+    try:
+        cur = conn.execute(
+            f"UPDATE chats SET {body.attribute} = ? WHERE id = ?",
+            (body.attributeValue, body.id),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            logger.warning("[Server - update_status] no rows updated, model not found")
+            return JSONResponse(status_code=404,
+                content={"success": False, "reason": "model not found"})
+    except sqlite3.Error as e:
+        logger.error(f"[Server - update_status] failed to connect to database: {e}")
+
+        logger.info("[Server - update_status] Successfully updated the install status for %s", body.name)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "reason": "internal server error"}
+        )
