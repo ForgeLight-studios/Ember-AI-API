@@ -81,12 +81,11 @@ def get_all_models(conn: sqlite3.Connection = Depends(get_db)):
             content=[{"success": False, "reason": "database error"}]
         )
     models = [dict(row) for row in rows]
-    logger.info("[Server - get_all_models] Models retrieved\n%s", json.dumps(models))
     return JSONResponse(
         status_code=200,
         content={"success": True,
                  "models": models,
-                 "pulling": services.current_pull.get("name") if services.current_pull else None}
+                 "pulling": services.current_pull if services.current_pull else None}
     )
 
 @router.delete("/delete")

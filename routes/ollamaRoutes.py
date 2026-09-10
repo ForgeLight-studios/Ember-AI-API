@@ -3,11 +3,11 @@ from fastapi import APIRouter, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from DbAccess import get_db
-# from services import insert_model, client, current_pull
 import services
 from starlette.responses import StreamingResponse
 import ollama
 import logging, asyncio, json
+from DbAccess import connect
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +27,16 @@ class ChatIn(BaseModel):
     keep_alive: str
 
 class PullModel(BaseModel):
-    model: str
+    name: str
+    description: str
 
 pullProgress: dict[str, dict] = {}
 
-def doPull (model: str):
+def doPull (model: str, description: str):
+    conn = connect()
     """Runs in the background. Does NOT depend on any client connection."""
     pullProgress[model] = {"state": "pulling", "status": "starting", "completed": 0, "total": 0, "error": None}
-    services.current_pull = {"name": model}
+    # services.current_pull = {"name": model, "description": description  }
     try :
         for chunk in services.client.pull(model=model, stream=True):
             c = dict(chunk)
@@ -44,6 +46,12 @@ def doPull (model: str):
                 "total": c.get("total") or 0,
             })
         pullProgress[model].update({"state": "done", "status": "success"})
+        logger.info("[Server - doPull] completed model=%s", model)
+        try:
+            services.insert_model(conn, model, description, "installed")
+            conn.commit()
+        finally:
+            conn.close()
         logger.info("[Server - doPull] completed model=%s", model)
     except ollama.ResponseError as e:
         reason = f"model {model} not found" if e.status_code == 404 else f"ollama error: {e.error}"
@@ -97,13 +105,22 @@ def chat(body: ChatIn): # the ChatIn class here is a new object
 
 @router.post("/pull")
 def start_pull(body: PullModel, background: BackgroundTasks):
-    services.current_pull = {"name": body.model}
+    logger.info("[Server - start_pull ] Starting pull workflow - checking active or not pull")
+    services.current_pull = {"name": body.name, "description": body.description}
     # avoid starting a duplicate pull for the same model
-    existing = pullProgress.get(body.model)
+    existing = pullProgress.get(body.name)
     if existing and existing["state"] == "pulling":
-        return JSONResponse({"success": True, "status": "already pulling"})
-    background.add_task(doPull, body.model)
-    return JSONResponse({"success": True, "status": "started"})
+        logger.info("[Server - start_pull] Model is already being pulled")
+        return JSONResponse(
+            status_code=200,
+           content={"success": True, "status": "already pulling"}
+        )
+    logger.info("[Server - start_pull] Starting the model pull on a background task")
+    background.add_task(doPull, body.name, body.description)
+    return JSONResponse(
+        status_code= 200,
+        content={"success": True, "status": "started"}
+    )
 
 @router.get("/pull/progress/{model}")
 async def pull_progress_stream(model: str):
@@ -120,7 +137,7 @@ async def pull_progress_stream(model: str):
                 last = dict(state)
             if state["state"] in ("done", "error"):
                 return
-            await asyncio.sleep(0.5)   # poll the shared state a couple times a second
+            await asyncio.sleep(0.5)   # poll the shared state a couple of times a second
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

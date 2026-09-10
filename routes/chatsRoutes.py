@@ -115,7 +115,6 @@ def getAllChats(conn: sqlite3.Connection = Depends(get_db)):
                 "content": row["content"],
             })
     results = list(chats.values())
-    logger.info("[Server - getAllChats]" + json.dumps(results))
     return JSONResponse(
         status_code= 200,
         content= {"success": True, "chats": results}
