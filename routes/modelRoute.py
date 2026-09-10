@@ -2,6 +2,7 @@ import logging
 import sqlite3
 from plistlib import dumps
 from services import deleteOllamaModel, insert_model, getInstalledModels
+import services
 from DbAccess import get_db
 from fastapi import APIRouter, Depends
 import json
@@ -69,7 +70,7 @@ def get_all_models(conn: sqlite3.Connection = Depends(get_db)):
     logger.info("[Server - get_all_models] Starting endpoint")
     try:
         cur = conn.execute(
-            "SELECT name, description, status FROM models"
+            "SELECT name, description, status FROM models ASC"
         )
         rows = cur.fetchall()
 
@@ -81,8 +82,12 @@ def get_all_models(conn: sqlite3.Connection = Depends(get_db)):
         )
     models = [dict(row) for row in rows]
     logger.info("[Server - get_all_models] Models retrieved\n%s", json.dumps(models))
-    return {"success": True, "models": models}
-
+    return JSONResponse(
+        status_code=200,
+        content={"success": True,
+                 "models": models,
+                 "pulling": services.current_pull.get("name") if services.current_pull else None}
+    )
 
 @router.delete("/delete")
 def deleteAModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):

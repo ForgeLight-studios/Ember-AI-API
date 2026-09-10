@@ -8,6 +8,7 @@ OLLAMA_HOST = "http://localhost:11434"
 
 client = ollama.Client(host=OLLAMA_HOST)
 
+current_pull: dict | None = None
 # a plain helper — takes conn + values, no Pydantic, no Depends
 def insert_model(conn, name, description, status):
     conn.execute(

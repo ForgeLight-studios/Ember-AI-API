@@ -1,13 +1,13 @@
 import sqlite3
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from DbAccess import get_db
-from services import insert_model, client
-import json
+# from services import insert_model, client, current_pull
+import services
 from starlette.responses import StreamingResponse
 import ollama
-import logging
+import logging, asyncio, json
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,40 @@ class ChatIn(BaseModel):
 class PullModel(BaseModel):
     model: str
 
+pullProgress: dict[str, dict] = {}
+
+def doPull (model: str):
+    """Runs in the background. Does NOT depend on any client connection."""
+    pullProgress[model] = {"state": "pulling", "status": "starting", "completed": 0, "total": 0, "error": None}
+    services.current_pull = {"name": model}
+    try :
+        for chunk in services.client.pull(model=model, stream=True):
+            c = dict(chunk)
+            pullProgress[model].update({
+                "status": c.get("status", ""),
+                "completed": c.get("completed") or 0,
+                "total": c.get("total") or 0,
+            })
+        pullProgress[model].update({"state": "done", "status": "success"})
+        logger.info("[Server - doPull] completed model=%s", model)
+    except ollama.ResponseError as e:
+        reason = f"model {model} not found" if e.status_code == 404 else f"ollama error: {e.error}"
+        pullProgress[model].update({"state": "error", "error": reason})
+        # update_model_status(model, "failed")
+    except Exception as e:
+        logger.exception("[do_pull] failed model=%s", model)
+        pullProgress[model].update({"state": "error", "error": str(e)})
+        # update_model_status(model, "failed")
+    finally:
+        services.current_pull = None
+
 # it starts up an ollama model if it has been pulled, and sends a message
 @router.post("/sendMessage")
 def chat(body: ChatIn): # the ChatIn class here is a new object
     logger.info("[Server - chat] Starting endpoint.")
     try:
         logger.info("[Server - chat] Attempting to connect to the ollama server")
-        resp = client.chat(
+        resp = services.client.chat(
             model=body.model,
             messages=body.messages,
             # keeps that model alive for 30 minutes after the last message
@@ -68,46 +95,39 @@ def chat(body: ChatIn): # the ChatIn class here is a new object
         "reply": resp["message"]["content"]
     }
 
-@router.post('/pull')
-def pull_model(body: PullModel):
-    logger.info("[Server - pullModel] Starting endpoint")
-    def stream():
-        try:
-            for chunk in client.pull(model=body.model, stream=True):
-                payload = dict(chunk)
-                yield f"data: {json.dumps(payload)}\n\n"
+@router.post("/pull")
+def start_pull(body: PullModel, background: BackgroundTasks):
+    services.current_pull = {"name": body.model}
+    # avoid starting a duplicate pull for the same model
+    existing = pullProgress.get(body.model)
+    if existing and existing["state"] == "pulling":
+        return JSONResponse({"success": True, "status": "already pulling"})
+    background.add_task(doPull, body.model)
+    return JSONResponse({"success": True, "status": "started"})
 
-            logger.info("[Server - pullModel] completed model=%s", body.model)
-            yield f"data: {json.dumps({'done': True})}\n\n"
-
-        except ollama.ResponseError as e:
-            logger.warning(
-                "[Server - pullModel] ollama rejected model=%s status=%s",
-                body.model, e.status_code
-            )
-            reason = (
-                f"model: {body.model} not found in registery"
-                if e.status_code == 404
-                else f"ollama error: {e.error}"
-            )
-            yield f"data: {json.dumps({'error': reason})}\n\n"
-
-        except Exception as e:
-            logger.exception("[Server - pullModel] unexpected failure model=%s", body.model)
-            yield f"data: {json.dumps({'error': str(e)})}"
-    return StreamingResponse(
-        stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no"
-        }
-    )
+@router.get("/pull/progress/{model}")
+async def pull_progress_stream(model: str):
+    async def stream():
+        last = None
+        while True:
+            state = pullProgress.get(model)
+            if state is None:
+                yield f"data: {json.dumps({'error': 'no such pull'})}\n\n"
+                return
+            # only emit when something changed
+            if state != last:
+                yield f"data: {json.dumps(state)}\n\n"
+                last = dict(state)
+            if state["state"] in ("done", "error"):
+                return
+            await asyncio.sleep(0.5)   # poll the shared state a couple times a second
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @router.get('/checkInstalled')
 def checkInstalledModels(conn: sqlite3.Connection = Depends(get_db)):
     logger.info("[Server - checkInstalledModels] starting endpoint")
-    modelsInstalled = client.list()
+    modelsInstalled = services.client.list()
     logger.info(f"[Server - checkInstalledModels] Models already Installed\n{modelsInstalled}")
     if not len(modelsInstalled.models) > 0:
         return JSONResponse(
@@ -116,7 +136,7 @@ def checkInstalledModels(conn: sqlite3.Connection = Depends(get_db)):
         )
     for model in modelsInstalled.models:
         try:
-            insert_model(conn, model.model, "", "installed")
+            services.insert_model(conn, model.model, "", "installed")
         except sqlite3.Error as e:
             logger.error(f"[Server - checkInstalledModels] Error adding models to the database {e}")
             conn.rollback()
