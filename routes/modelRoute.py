@@ -107,6 +107,7 @@ def deleteAModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
             )
 
     try:
+        conn.execute("UPDATE chats SET model = NULL WHERE model = ?", (body.name,))
         cur = conn.execute('DELETE FROM models WHERE name=?', (body.name,))
         if cur.rowcount > 1:
             conn.rollback()

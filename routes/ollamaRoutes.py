@@ -137,7 +137,7 @@ async def pull_progress_stream(model: str):
                 last = dict(state)
             if state["state"] in ("done", "error"):
                 return
-            await asyncio.sleep(0.5)   # poll the shared state a couple of times a second
+            await asyncio.sleep(0.5)
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

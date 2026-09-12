@@ -6,9 +6,9 @@ CREATE TABLE IF NOT EXISTS models (
 );
 
 CREATE TABLE IF NOT EXISTS chats (
-    id         TEXT PRIMARY KEY,
-    title      TEXT,
-    model      TEXT REFERENCES models(name),
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    model TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
