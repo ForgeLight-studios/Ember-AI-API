@@ -6,6 +6,7 @@ from DbAccess import init_db
 from routes.ollamaRoutes import router as ollama_router
 from routes.modelRoute import router as model_router
 from routes.chatsRoutes import router as chats_router
+from services import checkInstalledModels
 
 file_handler = RotatingFileHandler(
     "ember.log",
@@ -20,14 +21,8 @@ logger.basicConfig(
     level=logger.INFO,
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
     datefmt="%d-%m-%y %H:%M:%S",
-#     handlers=[file_handler, logger.StreamHandler()],
+    handlers=[file_handler, logger.StreamHandler()],
 )
-
-# for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
-#     lg = logger.getLogger(name)
-#     lg.handlers = [file_handler]
-#     lg.propagate = False
-
 
 app = FastAPI(
     title="Ember AI API"
@@ -40,6 +35,7 @@ app.include_router(chats_router)
 @app.on_event("startup")
 def startup():
     init_db()
+    checkInstalledModels()
 
 # sets teh cors middleware up
 app.add_middleware(
