@@ -35,7 +35,7 @@ def deleteOllamaModel(modelName):
     try:
         client.delete(modelName)
     except ollama.ResponseError as e:
-        logger.error(f"[Server - deleteOllamaModel ] Ollama rejected delete for {modelName!r}: status={e.status_code} error={e.error}")
+        logger.info(f"[Server - deleteOllamaModel ] Ollama rejected delete for {modelName!r}: status={e.status_code} error={e.error}")
         return {
             "status_code": e.status_code,
             "success": False
@@ -53,6 +53,7 @@ def getInstalledModels():
             "models": [m.model for m in installed.models]
         }
     except ollama.ResponseError as e:
+        logger.error(f"[Server - getInstalledModels] Response error from ollama {e}")
         return {
             "success": False
         }

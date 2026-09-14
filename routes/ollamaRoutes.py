@@ -141,28 +141,6 @@ async def pull_progress_stream(model: str):
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-# @router.get('/checkInstalled')
-# def checkInstalledModels(conn: sqlite3.Connection = Depends(get_db)):
-#     logger.info("[Server - checkInstalledModels] starting endpoint")
-#     modelsInstalled = services.client.list()
-#     logger.info(f"[Server - checkInstalledModels] Models already Installed\n{modelsInstalled}")
-#     if not len(modelsInstalled.models) > 0:
-#         return JSONResponse(
-#             status_code=200,
-#             content={"success": False, "reason": "No models to install"}
-#         )
-#     for model in modelsInstalled.models:
-#         try:
-#             services.insert_model(conn, model.model, "", "installed")
-#         except sqlite3.Error as e:
-#             logger.error(f"[Server - checkInstalledModels] Error adding models to the database {e}")
-#             conn.rollback()
-#     return JSONResponse (
-#         status_code= 200,
-#         content={"success": True}
-#     )
-
-
 
 # @app.get("/api/models/loaded"):
 # def loaded_models():

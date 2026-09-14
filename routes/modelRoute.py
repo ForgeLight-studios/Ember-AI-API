@@ -93,19 +93,31 @@ def deleteAModel(body: Model, conn: sqlite3.Connection = Depends(get_db)):
     logger.info(f"[Server - deleteModel] Starting endpoint: {body.name}")
     response = getInstalledModels()
     if not response.get("success"):
+        logger.warning("[Server - deleteAModel] Could not get the list of installed models: 'failed to contact the ollama service'")
         return JSONResponse(
             status_code=500,
             content={"Success": False, "reason": "failed to contact the ollama service"}
         )
     isInstalled = any(m == body.name for m in response.get("models"))
     if isInstalled:
-        result = deleteOllamaModel(body.name)
-        if not result.get("success"):
+        try:
+            result = deleteOllamaModel(body.name)
+            if not result.get("success"):
+                logger.warning("[Server - deleteAModel] Model was not deleted: 'Could not access the ollama service'")
+                return JSONResponse(
+                    status_code=500,
+                    content={"success": False}
+                )
+        except Exception as e:
+            logger.info(f"[Server - deleteAModel] Could not delete the model: {body.name} Error:\n{e} ")
             return JSONResponse(
                 status_code=500,
-                content={"success": False, "reason": "Could not access the ollama service"}
+                content={"success": False}
             )
-
+        return JSONResponse(
+            status_code=404,
+            content={"success": False}
+        )
     try:
         conn.execute("UPDATE chats SET model = NULL WHERE model = ?", (body.name,))
         cur = conn.execute('DELETE FROM models WHERE name=?', (body.name,))
